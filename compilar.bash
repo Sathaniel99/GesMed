@@ -1,0 +1,1 @@
+pyinstaller --onefile --windowed --name "GestorMedicamentos" --icon icono.ico --add-data "icono.ico;." main.py
