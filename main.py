@@ -191,11 +191,20 @@ class App(tk.Tk):
         self._recalcular()
         self._refrescar()
 
-        self.recordador = Recordador(lambda: self.datos, intervalo_seg=30)
+        self.recordador = Recordador(lambda: self.datos, intervalo_seg=10, repetir_cada_min=1/3)
         self.recordador.iniciar()
+        print("[APP] Notificador PERSISTENTE iniciado - Cada 20 segundos")
+        
+        # Forzar comprobación inmediata
+        try:
+            self.recordador.forzar_comprobacion()
+        except Exception as e:
+            print(f"[APP] Error forzando comprobación: {e}")
 
         self.after(30000, self._auto_refrescar)
         self.after(600, self._alerta_inicio)
+        self.after(2000, self._notificar_atrasados_inicio)
+        self.after(3000, lambda: self.recordador.forzar_comprobacion() if hasattr(self, 'recordador') else None)
 
     def destroy(self):
         """Detiene el hilo al cerrar la ventana."""
@@ -240,6 +249,26 @@ class App(tk.Tk):
             f"Hay {len(atrasados)} medicamento(s) que NO se consumieron a la hora prevista:\n\n"
             f"{nombres}{extra}"
         )
+
+    def _notificar_atrasados_inicio(self):
+        """Muestra notificaciones para medicamentos ya atrasados al iniciar."""
+        try:
+            from utils import parse_fecha
+            from datetime import datetime
+            ahora = datetime.now()
+            print(f"[APP] Revisando notificaciones al inicio - {len(self.datos)} registros")
+            for d in self.datos:
+                try:
+                    paciente, med, _, sgte, _ = d
+                    dt_sgte = parse_fecha(sgte)
+                    if dt_sgte and ahora >= dt_sgte:
+                        print(f"[APP] Notificando atrasado: {paciente} - {med}")
+                        if hasattr(self, 'recordador'):
+                            self.recordador._lanzar_notificacion(paciente, med, sgte, primera_vez=True)
+                except Exception:
+                    continue
+        except Exception as e:
+            print(f"[APP] Error en notificaciones inicio: {e}")
 
     # ---------------- UI ----------------
     def _build_ui(self):
@@ -469,6 +498,8 @@ class App(tk.Tk):
 
         self.datos.append([paciente, med, ultimo, sgte, frec])
         guardar(self.datos)
+        if hasattr(self, 'recordador'):
+            self.recordador.limpiar_notificaciones()
         self._refrescar()
 
         self.e_med.delete(0, "end")
@@ -523,6 +554,8 @@ class App(tk.Tk):
             self.datos[idx] = [d[0], d[1], ahora_str, nuevo_sgte, d[4]]
 
         guardar(self.datos)
+        if hasattr(self, 'recordador'):
+            self.recordador.limpiar_notificaciones()
         self._refrescar()
         messagebox.showinfo("Consumido",
                             f"Se actualizaron {len(sel)} registro(s).\n"
